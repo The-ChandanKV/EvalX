@@ -143,6 +143,3 @@ EvalX/
 
 - **Phase 1**: Core System Logic (Authentication, Database, Exam Engine, Auto Evaluation)
 
-## 📄 License
-
-MIT License
