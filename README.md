@@ -142,4 +142,97 @@ EvalX/
 ## 👥 Team
 
 - **Phase 1**: Core System Logic (Authentication, Database, Exam Engine, Auto Evaluation)
+- **Phase 2**: Question Management, Frontend, Grading System (Pranav)
 
+---
+
+## 🆕 Phase 2 — What's New ---**PARTIAL**
+
+### 🖥️ Frontend (React + Vite)
+- Full React frontend with role-based routing (Student / Faculty / Admin)
+- Dark-mode design system with glassmorphism, animations, and responsive layout
+- Sidebar navigation adapts per role
+- Pages: Login, Register, Dashboard, Courses, Exams, Questions, My Attempts, Results, Grading, My Result
+
+### 📝 Question Management (All 5 Types)
+- **MCQ** — single correct answer, lettered options, auto-graded
+- **MSQ** — multiple correct answers, checkbox-style, auto-graded
+- **True/False** — two-button UI, auto-graded
+- **Descriptive** — long-form text answer, model answer reference, manual grading
+- **Coding** — dark code editor, language selector, test cases with input/output, manual grading
+
+### 📤 Bulk CSV Upload
+- Upload many questions at once via `.csv` file
+- Live preview before upload (shows type, marks, options for each row)
+- Per-row validation error reporting — shows exactly which rows failed and why
+- Download CSV template button with correct format
+
+### 🏦 Question Bank
+- Create standalone questions not tied to any specific exam
+- Filter by subject, topic, difficulty, type, and keyword search
+- Checkbox-select multiple bank questions → import into any exam in one click
+- Full CRUD for bank questions
+
+### 🎲 Exam Randomization & Settings
+- **Shuffle Questions** — different question order per student
+- **Shuffle Options** — MCQ/MSQ answer options randomized per student
+- **Random Question Selection** — set a pool of N questions, pick X randomly per student
+- **Negative Marking** — configurable fraction deducted for wrong answers
+- **Show Results** — toggle whether students see results immediately after submission
+
+### ⏱️ Timer + Auto-Submit
+- Server-side `serverEndTime` enforced (client cannot cheat the timer)
+- Countdown timer: normal → amber (< 5 min) → red (< 1 min)
+- Auto-submits on the client when timer hits 0
+- Backend also auto-submits if student calls any API after time expired
+
+### 🤖 Auto Grading (MCQ / MSQ / True-False)
+- Compares submitted option IDs against correct option IDs
+- Full MSQ logic — all correct options must match exactly
+- Negative marking applied when enabled
+- Calculates: `obtainedMarks`, `percentage`, `passed`, `correctAnswers`, `wrongAnswers`, `unanswered`
+
+### 🖊️ Manual Grading Page (`/grading`)
+- Faculty selects an exam → sees all descriptive/coding submissions
+- Side-by-side view: student's answer vs model answer
+- Quick-mark buttons (0 / 50% / 75% / 100% of max marks)
+- Faculty can write **feedback** per answer (shown to the student in their result)
+- Grading instantly updates the attempt's total score
+- Filter tabs: All / Pending / Graded with badge counts
+
+### 🎓 Student Result Page (`/my-result`)
+- Pass/Fail gradient banner with emoji
+- Score grid: score, percentage, correct, wrong, unanswered, passing marks
+- Per-question answer review — selected options highlighted green (correct) or red (wrong)
+- Text answer display for descriptive and coding questions
+- Faculty feedback shown per question
+- Pending grading notice shown if some answers still need manual review
+
+### 🏫 Courses & Announcements
+- Faculty can create courses with a unique course code
+- Students join a course by entering the code
+- Faculty can post announcements inside a course
+- Students see enrolled courses on their dashboard
+
+### 📡 New API Endpoints (Phase 2)
+
+#### Question Bank
+| Method | Endpoint | Description | Access |
+|--------|----------|-------------|--------|
+| GET | `/api/questions/bank` | Browse question bank with filters | Faculty/Admin |
+| POST | `/api/questions/bank` | Add question to bank | Faculty/Admin |
+| POST | `/api/questions/bank/import/:examId` | Import bank questions into exam | Faculty/Admin |
+
+#### Manual Grading
+| Method | Endpoint | Description | Access |
+|--------|----------|-------------|--------|
+| GET | `/api/questions/grade/:examId` | Get pending submissions for grading | Faculty/Admin |
+| POST | `/api/questions/grade/:responseId` | Grade a single response | Faculty/Admin |
+
+#### Courses
+| Method | Endpoint | Description | Access |
+|--------|----------|-------------|--------|
+| POST | `/api/courses` | Create a course | Faculty/Admin |
+| GET | `/api/courses` | Get all courses for user | Authenticated |
+| POST | `/api/courses/join` | Join a course via code | Student |
+| POST | `/api/courses/:id/announcements` | Post an announcement | Faculty/Admin |
