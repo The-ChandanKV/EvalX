@@ -116,16 +116,20 @@ const questionValidation = [
         .withMessage('Question text is required'),
     body('questionType')
         .optional()
-        .isIn(['mcq', 'true_false', 'multi_select'])
-        .withMessage('Question type must be mcq, true_false, or multi_select'),
+        .isIn(['mcq', 'true_false', 'multi_select', 'descriptive', 'coding'])
+        .withMessage('Invalid question type'),
+    // options only required for MCQ-style types — validated in pre-save hook
     body('options')
-        .isArray({ min: 2 })
-        .withMessage('At least 2 options are required'),
+        .optional()
+        .isArray()
+        .withMessage('Options must be an array'),
     body('options.*.text')
+        .optional()
         .trim()
         .notEmpty()
         .withMessage('Option text is required'),
     body('options.*.isCorrect')
+        .optional()
         .isBoolean()
         .withMessage('isCorrect must be a boolean'),
     body('marks')
@@ -135,6 +139,10 @@ const questionValidation = [
         .optional()
         .isIn(['easy', 'medium', 'hard'])
         .withMessage('Difficulty must be easy, medium, or hard'),
+    body('topic').optional().trim(),
+    body('subject').optional().trim(),
+    body('modelAnswer').optional().trim(),
+    body('codeLanguage').optional().trim(),
     validate,
 ];
 

@@ -68,9 +68,22 @@ const examSchema = new mongoose.Schema(
             type: Boolean,
             default: false,
         },
+        shuffleOptions: {
+            type: Boolean,
+            default: false,  // Randomize answer option order per student
+        },
+        randomQuestions: {
+            type: Boolean,
+            default: false, // Randomly pick N questions from pool
+        },
+        questionsToSelect: {
+            type: Number,
+            default: null,  // null = use all questions
+            min: 1,
+        },
         showResults: {
             type: Boolean,
-            default: true, // Show results immediately after submission
+            default: true,
         },
         status: {
             type: String,

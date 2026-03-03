@@ -87,7 +87,7 @@ const startExam = asyncHandler(async (req, res) => {
             await evaluateAttempt(inProgressAttempt._id);
         } else {
             // Return existing in-progress attempt
-            const questions = await getExamQuestions(exam._id, exam.shuffleQuestions);
+            const questions = await getExamQuestions(exam._id, exam);
             const remainingTime = Math.max(
                 0,
                 Math.floor((inProgressAttempt.serverEndTime - new Date()) / 1000)
@@ -126,8 +126,7 @@ const startExam = asyncHandler(async (req, res) => {
         status: 'in_progress',
     });
 
-    // 8. Get questions (optionally shuffled) — hide correct answers from students
-    const questions = await getExamQuestions(exam._id, exam.shuffleQuestions);
+    const questions = await getExamQuestions(exam._id, exam);
 
     const remainingTimeSeconds = Math.floor(
         (serverEndTime - serverStartTime) / 1000
@@ -145,32 +144,50 @@ const startExam = asyncHandler(async (req, res) => {
 /**
  * Get exam questions for students (without correct answer info)
  */
-const getExamQuestions = async (examId, shuffle = false) => {
+const getExamQuestions = async (examId, exam) => {
     let questions = await Question.find({ exam: examId })
         .select('-__v')
         .sort({ order: 1 })
         .lean();
 
-    // Remove isCorrect from options (don't show answers to students)
-    questions = questions.map((q) => ({
-        _id: q._id,
-        questionText: q.questionText,
-        questionType: q.questionType,
-        marks: q.marks,
-        difficulty: q.difficulty,
-        options: q.options.map((opt) => ({
-            _id: opt._id,
-            text: opt.text,
-        })),
-    }));
-
-    // Shuffle questions if enabled
-    if (shuffle) {
+    // Random question selection: pick N from the pool
+    if (exam.randomQuestions && exam.questionsToSelect && exam.questionsToSelect < questions.length) {
+        for (let i = questions.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [questions[i], questions[j]] = [questions[j], questions[i]];
+        }
+        questions = questions.slice(0, exam.questionsToSelect);
+    } else if (exam.shuffleQuestions) {
+        // Shuffle all questions
         for (let i = questions.length - 1; i > 0; i--) {
             const j = Math.floor(Math.random() * (i + 1));
             [questions[i], questions[j]] = [questions[j], questions[i]];
         }
     }
+
+    // Strip correct answers + optionally shuffle options
+    questions = questions.map((q) => {
+        let options = (q.options || []).map(opt => ({ _id: opt._id, text: opt.text }));
+        if (exam.shuffleOptions && options.length > 1) {
+            for (let i = options.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [options[i], options[j]] = [options[j], options[i]];
+            }
+        }
+        return {
+            _id: q._id,
+            questionText: q.questionText,
+            questionType: q.questionType,
+            marks: q.marks,
+            difficulty: q.difficulty,
+            codeLanguage: q.codeLanguage,
+            options,
+            // Show test case inputs (not expected outputs) for coding
+            testCases: (q.questionType === 'coding')
+                ? (q.testCases || []).filter(tc => !tc.isHidden).map(tc => ({ _id: tc._id, input: tc.input, marks: tc.marks }))
+                : undefined,
+        };
+    });
 
     return questions;
 };
@@ -181,75 +198,41 @@ const getExamQuestions = async (examId, shuffle = false) => {
  * @access  Private/Student
  */
 const submitAnswer = asyncHandler(async (req, res) => {
-    const { questionId, selectedOptions } = req.body;
+    const { questionId, selectedOptions, textAnswer } = req.body;
 
     const attempt = await Attempt.findById(req.params.attemptId);
-
-    if (!attempt) {
-        throw new ApiError(404, 'Attempt not found');
-    }
-
-    // Verify this attempt belongs to the student
-    if (attempt.student.toString() !== req.user._id.toString()) {
+    if (!attempt) throw new ApiError(404, 'Attempt not found');
+    if (attempt.student.toString() !== req.user._id.toString())
         throw new ApiError(403, 'This is not your attempt');
-    }
-
-    // Check attempt is still in progress
-    if (attempt.status !== 'in_progress') {
+    if (attempt.status !== 'in_progress')
         throw new ApiError(400, 'This attempt has already been submitted');
-    }
 
-    // Server-side timer validation: Check if time has expired
     if (new Date() > attempt.serverEndTime) {
-        // Auto-submit the attempt
         attempt.status = 'auto_submitted';
         attempt.submittedAt = attempt.serverEndTime;
         await attempt.save();
-
         await evaluateAttempt(attempt._id);
-
-        throw new ApiError(
-            400,
-            'Time has expired. Your exam has been auto-submitted.'
-        );
+        throw new ApiError(400, 'Time has expired. Your exam has been auto-submitted.');
     }
 
-    // Verify question belongs to this exam
-    const question = await Question.findOne({
-        _id: questionId,
-        exam: attempt.exam,
-    });
+    const question = await Question.findOne({ _id: questionId, exam: attempt.exam });
+    if (!question) throw new ApiError(404, 'Question not found in this exam');
 
-    if (!question) {
-        throw new ApiError(404, 'Question not found in this exam');
-    }
-
-    // Upsert response (update if already answered, create if new)
     const response = await Response.findOneAndUpdate(
-        {
-            attempt: attempt._id,
-            question: questionId,
-        },
+        { attempt: attempt._id, question: questionId },
         {
             attempt: attempt._id,
             question: questionId,
             student: req.user._id,
-            selectedOptions,
+            selectedOptions: selectedOptions || [],
+            textAnswer: textAnswer || '',
             answeredAt: new Date(),
         },
-        {
-            upsert: true,
-            new: true,
-            runValidators: true,
-        }
+        { upsert: true, new: true, runValidators: true }
     );
 
-    successResponse(res, 200, 'Answer saved successfully', {
-        response: {
-            questionId: response.question,
-            selectedOptions: response.selectedOptions,
-            answeredAt: response.answeredAt,
-        },
+    successResponse(res, 200, 'Answer saved', {
+        response: { questionId: response.question, selectedOptions: response.selectedOptions, textAnswer: response.textAnswer, answeredAt: response.answeredAt },
     });
 });
 
@@ -336,17 +319,16 @@ const evaluateAttempt = async (attemptId) => {
     for (const question of questions) {
         const response = responseMap.get(question._id.toString());
 
-        if (!response || response.selectedOptions.length === 0) {
+        if (!response || (response.selectedOptions.length === 0 && !response.textAnswer)) {
             // Unanswered question
             unanswered++;
+            if (response) await Response.findByIdAndUpdate(response._id, { isCorrect: false, marksAwarded: 0 });
+            continue;
+        }
 
-            // Update response if exists
-            if (response) {
-                await Response.findByIdAndUpdate(response._id, {
-                    isCorrect: false,
-                    marksAwarded: 0,
-                });
-            }
+        // Skip open-ended — will be graded manually
+        if (['descriptive', 'coding'].includes(question.questionType)) {
+            // Leave marksAwarded at 0 until faculty grades
             continue;
         }
 
@@ -471,14 +453,23 @@ const getResult = asyncHandler(async (req, res) => {
         throw new ApiError(400, 'This attempt has not been submitted yet');
     }
 
-    // Get detailed responses if requested
+    // Get detailed responses - students can request their own results with answers
     let detailedResponses = [];
-    if (req.query.detailed === 'true' && req.user.role !== 'student') {
-        detailedResponses = await Response.find({
-            attempt: attempt._id,
-        })
-            .populate('question', 'questionText options marks questionType')
+    if (req.query.detailed === 'true') {
+        const isOwner = req.user.role !== 'student';
+        detailedResponses = await Response.find({ attempt: attempt._id })
+            .populate('question', 'questionText options marks questionType explanation modelAnswer codeLanguage')
             .lean();
+        // For students: hide isCorrect on individual options (show question-level isCorrect)
+        if (!isOwner) {
+            detailedResponses = detailedResponses.map(r => ({
+                ...r,
+                question: {
+                    ...r.question,
+                    options: r.question?.options?.map(o => ({ _id: o._id, text: o.text })),
+                },
+            }));
+        }
     }
 
     successResponse(res, 200, 'Result fetched successfully', {
@@ -510,11 +501,12 @@ const getExamResults = asyncHandler(async (req, res) => {
 
     const attempts = await Attempt.find({
         exam: exam._id,
-        status: 'evaluated',
+        status: { $in: ['submitted', 'auto_submitted', 'evaluated'] },
     })
         .populate('student', 'name email enrollmentNo department')
-        .sort({ obtainedMarks: -1 }); // Sorted by marks (rank order)
+        .sort({ obtainedMarks: -1 });
 
+    const pendingGrading = attempts.filter(a => ['submitted', 'auto_submitted'].includes(a.status)).length;
     // Calculate statistics
     const totalStudents = attempts.length;
     const passedStudents = attempts.filter((a) => a.passed).length;
@@ -554,6 +546,7 @@ const getExamResults = asyncHandler(async (req, res) => {
             averageMarks: avgMarks,
             highestMarks,
             lowestMarks,
+            pendingGrading,
         },
         results: attempts,
     });
