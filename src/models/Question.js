@@ -1,11 +1,18 @@
 const mongoose = require('mongoose');
 
+const testCaseSchema = new mongoose.Schema({
+    input: { type: String, default: '' },
+    expectedOutput: { type: String, required: true },
+    isHidden: { type: Boolean, default: false }, // hidden from student
+    marks: { type: Number, default: 1 },
+}, { _id: true });
+
 const questionSchema = new mongoose.Schema(
     {
         exam: {
             type: mongoose.Schema.Types.ObjectId,
             ref: 'Exam',
-            required: [true, 'Exam reference is required'],
+            default: null, // null = Question Bank entry
         },
         questionText: {
             type: String,
@@ -14,26 +21,24 @@ const questionSchema = new mongoose.Schema(
         },
         questionType: {
             type: String,
-            enum: ['mcq', 'true_false', 'multi_select'],
+            enum: ['mcq', 'true_false', 'multi_select', 'descriptive', 'coding'],
             default: 'mcq',
         },
         options: [
             {
-                text: {
-                    type: String,
-                    required: true,
-                    trim: true,
-                },
-                isCorrect: {
-                    type: Boolean,
-                    required: true,
-                    default: false,
-                },
+                text: { type: String, required: true, trim: true },
+                isCorrect: { type: Boolean, required: true, default: false },
             },
         ],
+        // For descriptive / coding: reference answer shown to faculty only
+        modelAnswer: { type: String, trim: true },
+        // For coding: test cases for automated evaluation
+        testCases: [testCaseSchema],
+        // Coding language hint
+        codeLanguage: { type: String, default: 'javascript' },
         marks: {
             type: Number,
-            required: [true, 'Marks for the question is required'],
+            required: [true, 'Marks is required'],
             min: [0, 'Marks cannot be negative'],
         },
         difficulty: {
@@ -41,38 +46,32 @@ const questionSchema = new mongoose.Schema(
             enum: ['easy', 'medium', 'hard'],
             default: 'medium',
         },
-        explanation: {
-            type: String,
-            trim: true,
-        },
-        order: {
-            type: Number,
-            default: 0,
-        },
+        // Topic / chapter for bank filtering
+        topic: { type: String, trim: true },
+        subject: { type: String, trim: true },
+        explanation: { type: String, trim: true },
+        order: { type: Number, default: 0 },
+        // Bank-only flag
+        isBank: { type: Boolean, default: false },
     },
-    {
-        timestamps: true,
-    }
+    { timestamps: true }
 );
 
-// Validate that at least one option is correct
+// Only validate options for choice-based question types
 questionSchema.pre('validate', function (next) {
-    if (this.options && this.options.length > 0) {
-        const hasCorrectOption = this.options.some((opt) => opt.isCorrect);
-        if (!hasCorrectOption) {
-            this.invalidate(
-                'options',
-                'At least one option must be marked as correct'
-            );
+    const needsOptions = ['mcq', 'true_false', 'multi_select'].includes(this.questionType);
+    if (needsOptions) {
+        if (!this.options || this.options.length < 2) {
+            this.invalidate('options', 'At least 2 options are required');
+        } else if (!this.options.some(opt => opt.isCorrect)) {
+            this.invalidate('options', 'At least one option must be marked as correct');
         }
-    }
-    if (this.options && this.options.length < 2) {
-        this.invalidate('options', 'At least 2 options are required');
     }
     next();
 });
 
-// Index for efficient querying
 questionSchema.index({ exam: 1, order: 1 });
+questionSchema.index({ subject: 1, topic: 1, difficulty: 1 });
+questionSchema.index({ isBank: 1 });
 
 module.exports = mongoose.model('Question', questionSchema);

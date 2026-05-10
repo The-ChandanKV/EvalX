@@ -1,3 +1,9 @@
+// Force Google's IPv4 DNS to resolve MongoDB Atlas SRV records
+// (local IPv6 router DNS refuses TCP SRV queries)
+const dns = require('dns');
+dns.setServers(['8.8.8.8', '8.8.4.4']);
+dns.setDefaultResultOrder('ipv4first');
+
 const express = require('express');
 const cors = require('cors');
 const morgan = require('morgan');
@@ -10,6 +16,7 @@ const authRoutes = require('./routes/auth.routes');
 const examRoutes = require('./routes/exam.routes');
 const questionRoutes = require('./routes/question.routes');
 const attemptRoutes = require('./routes/attempt.routes');
+const courseRoutes = require('./routes/course.routes');
 
 const app = express();
 
@@ -31,6 +38,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/exams', examRoutes);
 app.use('/api/questions', questionRoutes);
 app.use('/api/attempts', attemptRoutes);
+app.use('/api/courses', courseRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
